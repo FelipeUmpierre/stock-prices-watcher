@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"log"
@@ -13,7 +12,7 @@ import (
 
 type (
 	Stocks struct {
-		Series map[time.Time]Stock `json:"Time Series (1min)"`
+		Series map[string]Stock `json:"Time Series (1min)"`
 	}
 
 	Stock struct {
@@ -25,34 +24,9 @@ type (
 	}
 )
 
-func (s *Stocks) UnmarshalJSON(b []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(b))
-	for i := 0; i < 17; i++ {
-		if _, err := dec.Token(); err != nil {
-			log.Println("failed to get token", err)
-		}
-	}
-
-	var ss Stocks
-	for dec.More() {
-		var m map[string]Stock
-		if err := dec.Decode(&m); err != nil {
-			log.Println("failed to decode", err)
-		}
-
-		sm := make(map[time.Time]Stock, len(m))
-		for t, st := range m {
-			f, _ := time.Parse("2006-01-02 15:04:05", t)
-			sm[f] = st
-		}
-	}
-
-	ss = sm
-
-	return nil
-}
-
 func main() {
+	t := time.Now()
+
 	resp, err := http.Get("https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=MSFT&interval=1min&apikey=demo")
 	if err != nil {
 		panic(err)
@@ -63,12 +37,6 @@ func main() {
 	if err := json.NewDecoder(resp.Body).Decode(&stocks); err != nil {
 		panic(err)
 	}
-
-	// stocksSlice := make([]string, 0, len(stocks.Series))
-	// for t := range stocks.Series {
-	// 	stocksSlice = append(stocksSlice, t)
-	// }
-	// sort.Strings(stocksSlice)
 
 	ctx := context.Background()
 	eg, _ := errgroup.WithContext(ctx)
@@ -89,7 +57,9 @@ func main() {
 		panic(err)
 	}
 
-	log.Fatalf(`
+	log.Printf(`
 	%+v
 	`, stocks)
+
+	log.Fatalln(time.Since(t))
 }
