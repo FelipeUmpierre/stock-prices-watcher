@@ -2,64 +2,70 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
 
-	"golang.org/x/sync/errgroup"
+	"github.com/FelipeUmpierre/stock-prices-watcher/internal/app/gateway"
+	"github.com/FelipeUmpierre/stock-prices-watcher/internal/app/stock"
+	"github.com/FelipeUmpierre/stock-prices-watcher/internal/app/storage/postgres"
+	"github.com/jmoiron/sqlx"
+	"github.com/kelseyhightower/envconfig"
+	_ "github.com/lib/pq"
 )
 
-type (
-	Stocks struct {
-		Series map[string]Stock `json:"Time Series (1min)"`
-	}
-
-	Stock struct {
-		Open   string `json:"1. open"`
-		High   string `json:"2. high"`
-		Low    string `json:"3. low"`
-		Close  string `json:"4. close"`
-		Volume string `json:"5. volume"`
-	}
-)
+type config struct {
+	BaseURL string `split_words:"true"`
+	APIKey  string `split_words:"true"`
+	DB      string
+}
 
 func main() {
-	t := time.Now()
+	log.Println("starting")
+	defer log.Println("done")
 
-	resp, err := http.Get("https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=MSFT&interval=1min&apikey=demo")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := run(ctx); err != nil {
+		panic(err)
+	}
+}
+
+func run(ctx context.Context) error {
+	// =============================================
+	// Configuration
+	// =============================================
+	var cfg config
+	if err := envconfig.Process("", &cfg); err != nil {
+		return err
+	}
+
+	// =============================================
+	// AlphaVantage
+	// =============================================
+	alpha := gateway.NewAlphaVantageClient(&http.Client{
+		Timeout: 30 * time.Second,
+	}, gateway.AlphaVantageConfig{
+		BaseURL: cfg.BaseURL,
+		APIKey:  cfg.APIKey,
+	})
+
+	db, err := sqlx.ConnectContext(ctx, "postgres", cfg.DB)
 	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
-
-	var stocks Stocks
-	if err := json.NewDecoder(resp.Body).Decode(&stocks); err != nil {
-		panic(err)
+		return fmt.Errorf("failed to connect to db: %w", err)
 	}
 
-	ctx := context.Background()
-	eg, _ := errgroup.WithContext(ctx)
+	stockPricesRepository := postgres.NewStockPricesWriter(db)
 
-	// id := uuid.New()
-
-	for t, stock := range stocks.Series {
-		t := t
-		stock := stock
-
-		eg.Go(func() error {
-			log.Printf("%s: %+v\n", t, stock.Open)
-			return nil
-		})
+	// =============================================
+	// Service
+	// =============================================
+	service := stock.NewStockService(alpha, stockPricesRepository)
+	if err := service.CollectIntraday(ctx, "MSFT"); err != nil {
+		return err
 	}
 
-	if err := eg.Wait(); err != nil {
-		panic(err)
-	}
-
-	log.Printf(`
-	%+v
-	`, stocks)
-
-	log.Fatalln(time.Since(t))
+	return nil
 }
