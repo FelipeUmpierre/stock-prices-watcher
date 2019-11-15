@@ -1,11 +1,8 @@
-module github.com/FelipeUmpierre/investiments-consumer
+module github.com/FelipeUmpierre/stock-prices-watcher
 
-// go: no requirements found in Gopkg.lock
+go 1.12
 
 require (
-	github.com/jmoiron/sqlx v1.2.0
-	github.com/kelseyhightower/envconfig v1.3.0
-	github.com/lib/pq v1.0.0
-	github.com/rs/zerolog v1.11.0
-	google.golang.org/appengine v1.4.0 // indirect
+	github.com/google/uuid v1.1.1
+	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 )
